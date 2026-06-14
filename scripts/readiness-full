@@ -1,0 +1,38 @@
+#!/bin/bash
+# foundry-audit-readiness wrapper — FULL MODE (7 tools)
+# Usage: readiness-full [PROJECT_PATH]
+#        readiness-full                    # audit current directory
+#        readiness-full /path/to/project   # audit specific directory
+
+set -e
+
+PROJECT_PATH="${1:-.}"
+
+if ! command -v audit-readiness >/dev/null 2>&1; then
+    echo "❌ audit-readiness not found."
+    echo ""
+    echo "Install it first:"
+    echo "  git clone https://github.com/mailtkarim-bot/foundry-audit-readiness.git"
+    echo "  cd foundry-audit-readiness"
+    echo "  pip install -e ."
+    echo ""
+    echo "Then add this script to your PATH:"
+    echo "  ./scripts/install.sh"
+    exit 1
+fi
+
+if [ ! -d "$PROJECT_PATH" ]; then
+    echo "❌ Directory not found: $PROJECT_PATH"
+    exit 1
+fi
+
+PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd)"
+
+echo "🔍 Running FULL audit readiness on: $PROJECT_PATH"
+echo "⚠️  This runs 7 tools and may take 10-15 minutes..."
+audit-readiness --target "$PROJECT_PATH" --output audit-report --tools slither,aderyn,solhint,semgrep,mythril,halmos,smtchecker
+
+echo ""
+echo "✅ Reports generated:"
+echo "  - $PROJECT_PATH/audit-report.md"
+echo "  - $PROJECT_PATH/audit-report.html"

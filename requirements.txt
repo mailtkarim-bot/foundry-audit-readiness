@@ -1,20 +1,36 @@
-# Core
+# Core dependencies (required)
 pyyaml>=6.0.1
 jinja2>=3.1.3
 click>=8.1.7
 rich>=13.7.0
-
-# Report generation (Markdown -> HTML, no WeasyPrint)
 markdown>=3.5.2
 
 # Testing
 pytest>=8.0.0
 pytest-cov>=4.1.0
 
-# Optional: AST parsing for reliable NatSpec (install separately)
-# py-solc-x>=2.0.0
-# solc-select>=1.0.0
-
-# Static analysis (external tools installed separately)
-# slither-analyzer
-# aderyn (download prebuilt binary from GitHub releases)
+# ============================================================
+# SECURITY TOOLS (install separately as needed)
+# ============================================================
+#
+# Tier 1 - Fast tools (1-3 min total) - RECOMMENDED FOR CI
+#   pip install slither-analyzer
+#   npm install -g solhint
+#   pip install semgrep
+#
+# Tier 2 - Additional analyzers (2-4 min total)
+#   # Aderyn: download prebuilt binary from
+#   # https://github.com/Cyfrin/aderyn/releases
+#
+# Tier 3 - Deep analysis (8-15 min total) - PRE-AUDIT ONLY
+#   pip install mythril          # Symbolic execution (slow)
+#   pip install halmos           # Formal verification
+#
+# Tier 4 - Built into Foundry (no install needed)
+#   SMTChecker via solc -- included with Foundry toolchain
+#
+# Install ALL at once:
+#   pip install slither-analyzer mythril halmos semgrep
+#   npm install -g solhint
+#
+# ============================================================

@@ -23,16 +23,19 @@ def run_command(
     cwd: Optional[Path] = None,
     capture: bool = True,
     check: bool = False,
+    env: Optional[dict] = None,
 ) -> subprocess.CompletedProcess:
     """Run a shell command with logging."""
     logger.info(f"Running: {' '.join(cmd)}")
-    result = subprocess.run(
-        cmd,
-        cwd=cwd,
-        capture_output=capture,
-        text=True,
-        check=check,
-    )
+    kwargs = {
+        "cwd": cwd,
+        "capture_output": capture,
+        "text": True,
+        "check": check,
+    }
+    if env is not None:
+        kwargs["env"] = env
+    result = subprocess.run(cmd, **kwargs)
     if result.returncode != 0 and capture:
         logger.warning(f"Command failed: {result.stderr[:500]}")
     return result

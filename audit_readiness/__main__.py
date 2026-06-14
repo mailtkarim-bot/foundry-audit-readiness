@@ -1,4 +1,4 @@
-"""CLI entry point for Foundry Audit Readiness."""
+"""CLI entry point for Foundry Audit Readiness - Multi-Tool Edition."""
 
 import datetime
 import sys
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import click
 
-from audit_readiness import __version__
+from audit_readiness import __version__, __tools__
 from audit_readiness.config import Config
 from audit_readiness.natspec import check_natspec_completeness
 from audit_readiness.parser import (
@@ -54,12 +54,14 @@ class DummyGas:
               help="Path to the Foundry project to analyze.")
 @click.option("--output", "-o", default="audit-report.md", type=click.Path(path_type=Path),
               help="Output file path.")
-@click.option("--format", "-f", default="markdown", type=click.Choice(["markdown", "html"]),
-              help="Output format. HTML includes a 'Save as PDF' button.")
+@click.option("--format", "-f", default="both", type=click.Choice(["markdown", "html", "both"]),
+              help="Output format. 'both' generates Markdown + HTML. HTML includes a 'Save as PDF' button.")
 @click.option("--checks", "-c", default="all",
-              help="Comma-separated list: all, coverage, invariants, natspec, static, gas.")
+              help="Comma-separated: all, coverage, invariants, natspec, static, gas.")
 @click.option("--fail-on-threshold", is_flag=True,
-              help="Exit with non-zero code if any threshold is not met.")
+              help="Exit with non-zero code if thresholds are not met.")
+@click.option("--tools", default=None,
+              help="Override tools: comma-separated list (slither,aderyn,solhint,semgrep,mythril,halmos,smtchecker).")
 @click.version_option(version=__version__, prog_name="foundry-audit-readiness")
 def main(
     target: Path,
@@ -67,13 +69,22 @@ def main(
     format: str,
     checks: str,
     fail_on_threshold: bool,
+    tools: str,
 ) -> None:
-    """Run audit readiness checks on a Foundry project."""
-    console.rule(f"[bold blue] Foundry Audit Readiness - {target.name}")
+    """Run comprehensive audit readiness checks with free Solidity security tools."""
+    console.rule(f"[bold blue] Foundry Audit Readiness v{__version__} - {target.name}")
 
     config = Config.from_project(target)
-    enabled_checks = set(checks.split(",")) if checks != "all" else {"all"}
+    
+    # Allow --tools override
+    if tools:
+        config.static_analysis.tools = [t.strip() for t in tools.split(",")]
 
+    n_tools_configured = len(config.static_analysis.tools)
+    console.print(f"[dim]Configured: {n_tools_configured} tool(s) "
+                  f"({', '.join(config.static_analysis.tools)})[/dim]")
+
+    enabled_checks = set(checks.split(",")) if checks != "all" else {"all"}
     run_all = "all" in enabled_checks
     run_static = run_all or "static" in enabled_checks
     run_coverage = run_all or "coverage" in enabled_checks
@@ -82,16 +93,24 @@ def main(
     run_gas = run_all or "gas" in enabled_checks
 
     results = {}
+    tools_ran = 0
+    tools_skipped = 0
+    tools_failed = 0
 
     if run_static:
-        console.rule("[yellow] Static Analysis")
-        results["static_analysis"] = run_static_analysis(target, config.static_analysis.tools)
+        console.rule(f"[yellow] Static Analysis Suite ({n_tools_configured} tool(s) configured)")
+        results["static_analysis"] = run_static_analysis(target, config)
         for tool, res in results["static_analysis"].items():
             if res.error:
-                console.print(f"  {tool}: [dim]skipped - {res.error}[/dim]")
+                console.print(f"  [yellow]{tool:12s}[/yellow]: [dim]skipped - {res.error[:80]}[/dim]")
+                tools_skipped += 1
+            elif not res.passed:
+                console.print(f"  [red]{tool:12s}[/red]: FAIL ({len(res.findings)} findings)")
+                tools_ran += 1
+                tools_failed += 1
             else:
-                status = "PASS" if res.passed else "FAIL"
-                console.print(f"  {tool}: {status}")
+                console.print(f"  [green]{tool:12s}[/green]: PASS ({len(res.findings)} findings)")
+                tools_ran += 1
 
     if run_coverage:
         console.rule("[yellow] Test Coverage")
@@ -99,8 +118,8 @@ def main(
             target, ignore_paths=config.static_analysis.ignore_paths
         )
         cov = results["coverage"]
-        console.print(f"  Line: {cov.line_percent:.1f}% (threshold: {config.coverage.line}%)")
-        console.print(f"  Branch: {cov.branch_percent:.1f}% (threshold: {config.coverage.branch}%)")
+        console.print(f"  Line:     {cov.line_percent:.1f}% (threshold: {config.coverage.line}%)")
+        console.print(f"  Branch:   {cov.branch_percent:.1f}% (threshold: {config.coverage.branch}%)")
         console.print(f"  Function: {cov.function_percent:.1f}% (threshold: {config.coverage.function}%)")
 
     if run_invariants:
@@ -110,7 +129,7 @@ def main(
         console.print(f"  Functions found: {inv.functions_found}")
         console.print(f"  All passed: {inv.all_passed}")
         if not inv.passed and config.invariants.min_functions > 0:
-            console.print("  [dim]Note: Invariants are optional by default. Set min_functions > 0 to enforce.[/dim]")
+            console.print("  [dim]Note: Invariants are optional by default.[/dim]")
 
     if run_natspec:
         console.rule("[yellow] NatSpec Compliance")
@@ -121,9 +140,8 @@ def main(
             config.natspec.require_external,
         )
         ns = results["natspec"]
-        console.print(f"  Public: {ns.documented_public}/{ns.total_public}")
+        console.print(f"  Public:   {ns.documented_public}/{ns.total_public}")
         console.print(f"  External: {ns.documented_external}/{ns.total_external}")
-        console.print(f"  Method: {ns.method}")
 
     console.rule("[yellow] Compiler Warnings")
     no_warnings, warning_lines = check_compiler_warnings(
@@ -158,17 +176,20 @@ def main(
         compiler_warnings=warning_lines,
     )
 
-    if format == "html":
-        if not output.suffix == ".html":
-            output = output.with_suffix(".html")
-        generate_html_report(report, output)
-    else:
-        save_report(report, output)
+    md_output = output.with_suffix(".md")
+    html_output = output.with_suffix(".html")
 
-    # Determine overall status (invariants are optional by default)
+    if format in ("markdown", "both"):
+        save_report(report, md_output)
+
+    if format in ("html", "both"):
+        generate_html_report(report, html_output)
+
+    # Determine overall status
+    static_results = results.get("static_analysis", {})
     static_ok = all(
-        r.passed for r in results.get("static_analysis", {}).values() if not getattr(r, "error", None)
-    ) if "static_analysis" in results else True
+        r.passed for r in static_results.values() if not r.error
+    ) if static_results else True
 
     coverage_obj = results.get("coverage", DummyCoverage())
     coverage_ok = (
@@ -182,10 +203,30 @@ def main(
 
     all_passed = static_ok and coverage_ok and natspec_ok and no_warnings
 
+    # Honest summary message
     if all_passed:
         console.rule("[bold green] READY FOR PROFESSIONAL AUDIT")
+        msg_parts = []
+        if tools_ran > 0:
+            msg_parts.append(f"{tools_ran} tool(s) ran clean")
+        if tools_skipped > 0:
+            msg_parts.append(f"{tools_skipped} skipped (not installed)")
+        if tools_failed > 0:
+            msg_parts.append(f"{tools_failed} had findings (non-critical)")
+        console.print(f"[green]{' | '.join(msg_parts)}[/green]")
+        if tools_skipped > 0:
+            console.print(f"[dim]Install more tools for deeper checks: "
+                          f"mythril, halmos, aderyn | Use: --tools {','.join(__tools__)}[/dim]")
     else:
         console.rule("[bold red] NOT READY FOR AUDIT")
+        if tools_failed > 0:
+            console.print(f"[red]{tools_failed} tool(s) reported critical/high findings[/red]")
+        if not coverage_ok:
+            console.print("[red]Coverage below thresholds[/red]")
+        if not natspec_ok:
+            console.print("[red]NatSpec documentation incomplete[/red]")
+        if not no_warnings:
+            console.print("[red]Compiler warnings detected[/red]")
 
     if fail_on_threshold and not all_passed:
         sys.exit(1)

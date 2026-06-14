@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional
 
 import yaml
 
@@ -22,10 +22,25 @@ class InvariantConfig:
 
 @dataclass
 class StaticAnalysisConfig:
-    tools: List[str] = field(default_factory=lambda: ["slither"])
+    # Default: 3 fast, reliable tools. Users can add more via --tools or YAML.
+    # Tiers: [slither,solhint,semgrep] = fast (~2min)
+    #        +aderyn+mythril = advanced (~8min)
+    #        +halmos+smtchecker = deep (~15min)
+    tools: List[str] = field(default_factory=lambda: [
+        "slither", "solhint", "semgrep"
+    ])
     ignore_paths: List[str] = field(
         default_factory=lambda: ["lib/", "test/", "script/", "node_modules/"]
     )
+    timeouts: Dict[str, int] = field(default_factory=lambda: {
+        "slither": 300,       # 5 min
+        "aderyn": 120,        # 2 min
+        "solhint": 60,        # 1 min
+        "semgrep": 120,       # 2 min
+        "mythril": 600,       # 10 min (symbolic execution is slow)
+        "halmos": 300,        # 5 min
+        "smtchecker": 180,    # 3 min
+    })
 
 
 @dataclass
@@ -54,10 +69,21 @@ class Config:
             return cls()
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
+        
+        # Parse static_analysis with defaults
+        sa_data = data.get("static_analysis", {})
+        sa_tools = sa_data.get("tools", StaticAnalysisConfig().tools)
+        sa_ignore = sa_data.get("ignore_paths", StaticAnalysisConfig().ignore_paths)
+        sa_timeouts = {**StaticAnalysisConfig().timeouts, **sa_data.get("timeouts", {})}
+        
         return cls(
             coverage=CoverageThresholds(**data.get("coverage", {})),
             invariants=InvariantConfig(**data.get("invariants", {})),
-            static_analysis=StaticAnalysisConfig(**data.get("static_analysis", {})),
+            static_analysis=StaticAnalysisConfig(
+                tools=sa_tools,
+                ignore_paths=sa_ignore,
+                timeouts=sa_timeouts,
+            ),
             natspec=NatSpecConfig(**data.get("natspec", {})),
             gas=GasConfig(**data.get("gas", {})),
         )
