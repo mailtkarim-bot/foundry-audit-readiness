@@ -1,0 +1,50 @@
+name: Audit Readiness Check
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+
+jobs:
+  audit-readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Python dependencies
+        run: |
+          pip install slither-analyzer
+          pip install -r requirements.txt
+
+      - name: Run Audit Readiness
+        run: |
+          python -m audit_readiness --target . --output audit-report.html --format html
+
+      - name: Upload Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-readiness-report
+          path: audit-report.html
+
+      - name: Check Thresholds
+        run: |
+          python -m audit_readiness --target . --fail-on-threshold
