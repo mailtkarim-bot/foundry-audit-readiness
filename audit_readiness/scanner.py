@@ -59,6 +59,8 @@ def run_slither(project_path: Path) -> StaticAnalysisResult:
 
     findings = []
     for detector in data.get("results", []):
+        if not isinstance(detector, dict):
+            continue
         elements = detector.get("elements", [{}])
         source_mapping = elements[0].get("source_mapping", {}) if elements else {}
         finding = Finding(

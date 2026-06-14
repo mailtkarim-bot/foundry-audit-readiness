@@ -221,12 +221,46 @@ def parse_gas_snapshot(project_path: Path) -> GasSnapshot:
     return GasSnapshot(functions=functions, baseline_exists=True)
 
 
-def check_compiler_warnings(project_path: Path) -> tuple[bool, List[str]]:
-    """Run forge build and return (no_warnings, list of warning lines)."""
+def check_compiler_warnings(
+    project_path: Path,
+    ignore_paths: Optional[List[str]] = None,
+) -> tuple[bool, List[str]]:
+    """Run forge build and return (no_warnings, list of warning blocks)."""
+    ignore_paths = ignore_paths or []
     result = run_command(["forge", "build"], cwd=project_path)
     combined = (result.stdout or "") + "\n" + (result.stderr or "")
-    warning_lines = [
-        line.strip() for line in combined.splitlines()
-        if "warning" in line.lower() and line.strip()
-    ][:10]
-    return not warning_lines, warning_lines
+    lines = combined.splitlines()
+
+    warnings: List[str] = []
+    current: List[str] = []
+    in_warning = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if in_warning:
+                warnings.append("\n".join(current).strip())
+                current = []
+                in_warning = False
+            continue
+
+        if stripped.lower().startswith("warning"):
+            if in_warning:
+                warnings.append("\n".join(current).strip())
+                current = []
+            in_warning = True
+
+        if in_warning:
+            current.append(line.rstrip())
+
+    if in_warning and current:
+        warnings.append("\n".join(current).strip())
+
+    # Filter out warnings located in ignored paths (e.g. test/, script/)
+    filtered = []
+    for warning in warnings:
+        if any(ignore in warning for ignore in ignore_paths):
+            continue
+        filtered.append(warning)
+
+    return not filtered, filtered

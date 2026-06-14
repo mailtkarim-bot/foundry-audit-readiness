@@ -126,7 +126,9 @@ def main(
         console.print(f"  Method: {ns.method}")
 
     console.rule("[yellow] Compiler Warnings")
-    no_warnings, warning_lines = check_compiler_warnings(target)
+    no_warnings, warning_lines = check_compiler_warnings(
+        target, ignore_paths=config.static_analysis.ignore_paths
+    )
     console.print(f"  No warnings: {no_warnings}")
     for line in warning_lines[:3]:
         console.print(f"    [dim]{line[:120]}[/dim]")

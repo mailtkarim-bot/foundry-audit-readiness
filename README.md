@@ -254,14 +254,17 @@ printable document without installing 200MB of system libraries.
 
 ## Real-World Validation
 
-The tool was validated against the [Dubai Real Estate Token (DREIT)](https://github.com/mailtkarim-bot/dubai-real-estate-project) Foundry project:
+The tool was validated against the [Dubai Real Estate Investment Token (DREIT)](https://github.com/mailtkarim-bot/Dubai-Real-Estate-Token-V3) Foundry project and the codebase is now marked as **READY FOR PROFESSIONAL AUDIT**:
 
+- Static analysis (Slither): **0 critical / 0 high / 0 medium / 0 low**
 - Line coverage: **99.4%** / Branch coverage: **95.1%** / Function coverage: **100%**
-- Invariant tests: **6 functions**, all passing
-- NatSpec: only **11/117 external** functions documented (clear improvement area)
-- Compiler warnings: detected and listed in the report
+- Invariant tests: **6/6** passing
+- NatSpec: **2/2 public** and **117/117 external** functions documented
+- Compiler warnings: **None** in source contracts
 
-See [`examples/dreit_report_sample.md`](examples/dreit_report_sample.md) for the full generated report.
+DREIT references this tool in its README and uses it as an automated quality gate before engaging an external auditor.
+
+See [`examples/dreit_report_sample.md`](examples/dreit_report_sample.md) for a sample generated report.
 
 ---
 

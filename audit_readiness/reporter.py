@@ -26,9 +26,21 @@ MARKDOWN_TEMPLATE = """# AUDIT READINESS REPORT - {{ project_name }}
 {%- set high = result.findings | selectattr("severity", "equalto", "high") | list | length %}
 {%- set medium = result.findings | selectattr("severity", "equalto", "medium") | list | length %}
 {%- set low = result.findings | selectattr("severity", "equalto", "low") | list | length %}
-- {{ tool.title() }}: {{ critical }} critical, {{ high }} high, {{ medium }} medium, {{ low }} low
+- **Summary:** {{ critical }} critical, {{ high }} high, {{ medium }} medium, {{ low }} low
 {%- if not result.passed %}
 - **Status:** FAILED (critical/high findings detected)
+{%- else %}
+- **Status:** PASS
+{%- endif %}
+
+{%- if result.findings %}
+**Detailed findings:**
+
+| Severity | File | Line | Check | Message |
+|----------|------|------|-------|---------|
+{%- for finding in result.findings %}
+| {{ finding.severity }} | {{ finding.file or "—" }} | {{ finding.line or "—" }} | {{ finding.check }} | {{ finding.message | replace("|", " ") | replace("\n", " ") | truncate(120, end="") }} |
+{%- endfor %}
 {%- endif %}
 {%- endif %}
 {%- else %}
@@ -68,9 +80,9 @@ MARKDOWN_TEMPLATE = """# AUDIT READINESS REPORT - {{ project_name }}
 - **Method:** {{ natspec.method }}
 
 {%- if not natspec.passed %}
-**Missing documentation (first 10):**
+**Missing documentation ({{ natspec.missing | length }} functions):**
 
-{%- for file, func, line in natspec.missing[:10] %}
+{%- for file, func, line in natspec.missing %}
 - `{{ file }}:{{ line }}` — `{{ func }}()`
 {%- endfor %}
 {%- endif %}
@@ -80,12 +92,14 @@ MARKDOWN_TEMPLATE = """# AUDIT READINESS REPORT - {{ project_name }}
 {%- if no_warnings %}
 - **Status:** No warnings detected
 {%- else %}
-- **Status:** Warnings detected
+- **Status:** Warnings detected ({{ compiler_warnings | length }} warning(s))
 
-**Sample warnings:**
+**All warnings:**
 
-{%- for warning in compiler_warnings[:5] %}
-- `{{ warning }}`
+{%- for warning in compiler_warnings %}
+```
+{{ warning }}
+```
 {%- endfor %}
 {%- endif %}
 
