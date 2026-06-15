@@ -24,6 +24,7 @@ def run_command(
     capture: bool = True,
     check: bool = False,
     env: Optional[dict] = None,
+    input: Optional[str] = None,
 ) -> subprocess.CompletedProcess:
     """Run a shell command with logging."""
     logger.info(f"Running: {' '.join(cmd)}")
@@ -35,6 +36,8 @@ def run_command(
     }
     if env is not None:
         kwargs["env"] = env
+    if input is not None:
+        kwargs["input"] = input
     result = subprocess.run(cmd, **kwargs)
     if result.returncode != 0 and capture:
         logger.warning(f"Command failed: {result.stderr[:500]}")

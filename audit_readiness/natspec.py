@@ -36,50 +36,127 @@ def _documentation_has_natspec(documentation) -> bool:
     return False
 
 
+def _detect_solc_version(sol_file: Path) -> Optional[str]:
+    """Extract the pragma solidity version from a Solidity file."""
+    try:
+        content = sol_file.read_text(encoding="utf-8", errors="ignore")
+        # Match pragma solidity with exact/pinned version: pragma solidity 0.8.28;
+        match = re.search(r"pragma\s+solidity\s+([\d.]+)", content)
+        if match:
+            return match.group(1)
+    except Exception:
+        pass
+    return None
+
+
+def _find_matching_solc(sol_file: Path) -> Optional[str]:
+    """Find a solc binary matching the file's pragma version.
+
+    Foundry downloads compilers to ~/.local/share/svm/<version>/solc-<version>.
+    Falls back to the system `solc` if no matching version is installed.
+    """
+    version = _detect_solc_version(sol_file)
+    if version:
+        svm_path = Path.home() / ".local" / "share" / "svm" / version / f"solc-{version}"
+        if svm_path.exists() and svm_path.is_file():
+            return str(svm_path)
+    system_solc = shutil.which("solc")
+    return system_solc
+
+
 def _try_ast_parse(project_path: Path, sol_file: Path) -> Optional[List[Tuple[str, str, bool, int]]]:
-    """Try to use solc AST for reliable parsing. Returns None if solc unavailable."""
-    if not shutil.which("solc"):
+    """Try to use solc AST for reliable parsing. Returns None if solc unavailable.
+
+    Uses solc's standard-json interface so Foundry remappings are respected.
+    """
+    solc_path = _find_matching_solc(sol_file)
+    if not solc_path:
         return None
 
     try:
+        remappings = []
+        forge = shutil.which("forge")
+        if forge:
+            rem_result = run_command(["forge", "remappings"], cwd=project_path, capture=True)
+            if rem_result.returncode == 0 and rem_result.stdout:
+                remappings = [r.strip() for r in rem_result.stdout.strip().splitlines() if r.strip()]
+
+        standard_input = {
+            "language": "Solidity",
+            "sources": {
+                str(sol_file): {"urls": [str(sol_file)]}
+            },
+            "settings": {
+                "remappings": remappings,
+                "outputSelection": {"*": {"*": [], "": ["ast"]}},
+            },
+        }
+
         result = run_command(
-            ["solc", "--ast-compact-json", str(sol_file)],
+            [solc_path, "--standard-json"],
             cwd=project_path,
             capture=True,
+            input=json.dumps(standard_input),
         )
         if result.returncode != 0:
             return None
 
-        ast_data = json.loads(result.stdout)
-        functions = []
+        data = json.loads(result.stdout)
+        errors = [e for e in data.get("errors", []) if e.get("severity") == "error"]
+        if errors:
+            return None
 
-        def walk_nodes(node):
-            if isinstance(node, dict):
-                if node.get("nodeType") == "FunctionDefinition":
-                    visibility = node.get("visibility", "")
-                    name = node.get("name", "")
-                    src = node.get("src", "")
-                    line = 0
-                    if src:
-                        try:
-                            line = int(src.split(":")[2])
-                        except (ValueError, IndexError):
-                            pass
-                    has_natspec = _documentation_has_natspec(node.get("documentation"))
-                    if visibility in ("public", "external"):
-                        functions.append((name, visibility, has_natspec, line))
-                for child in node.values():
-                    if isinstance(child, (dict, list)):
-                        walk_nodes(child)
-            elif isinstance(node, list):
-                for item in node:
-                    walk_nodes(item)
+        source_data = data.get("sources", {}).get(str(sol_file), {})
+        ast_data = source_data.get("ast", {})
+        if not ast_data:
+            return None
 
-        walk_nodes(ast_data)
-        return functions
+        return _extract_functions_from_ast(ast_data)
     except Exception as e:
         logger.debug(f"AST parsing failed for {sol_file}: {e}")
         return None
+
+
+def _extract_functions_from_ast(ast_data: dict) -> List[Tuple[str, str, bool, int]]:
+    """Extract function definitions with NatSpec from AST."""
+    functions = []
+
+    def walk_nodes(node):
+        if isinstance(node, dict):
+            if node.get("nodeType") == "FunctionDefinition":
+                visibility = node.get("visibility", "")
+                name = node.get("name", "")
+                src = node.get("src", "")
+                line = 0
+                if src:
+                    try:
+                        # src format: "offset:length:file_id"
+                        # line info may be in a separate source map
+                        line = int(src.split(":")[0])  # Use offset as fallback
+                    except (ValueError, IndexError):
+                        pass
+                # Try to get actual line number from source locations if available
+                if "src" in node and node["src"]:
+                    try:
+                        parts = node["src"].split(":")
+                        if len(parts) >= 3:
+                            # The third element is the file ID, not line
+                            # Lines require source maps which we may not have
+                            pass
+                    except:
+                        pass
+                has_natspec = _documentation_has_natspec(node.get("documentation"))
+                if visibility in ("public", "external"):
+                    functions.append((name, visibility, has_natspec, line))
+            for child in node.values():
+                if isinstance(child, (dict, list)):
+                    walk_nodes(child)
+        elif isinstance(node, list):
+            for item in node:
+                walk_nodes(item)
+
+    walk_nodes(ast_data)
+    return functions
 
 
 def _find_natspec_blocks(content: str) -> List[Tuple[int, int, str]]:

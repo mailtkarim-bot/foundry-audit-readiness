@@ -101,14 +101,27 @@ def main(
         console.rule(f"[yellow] Static Analysis Suite ({n_tools_configured} tool(s) configured)")
         results["static_analysis"] = run_static_analysis(target, config)
         for tool, res in results["static_analysis"].items():
-            if res.error:
+            if res.error and not res.passed:
+                # Tool crashed during execution (not just "not installed")
+                is_not_installed = "not found" in (res.error or "").lower()
+                if is_not_installed:
+                    console.print(f"  [yellow]{tool:12s}[/yellow]: [dim]skipped - {res.error[:80]}[/dim]")
+                    tools_skipped += 1
+                else:
+                    console.print(f"  [red]{tool:12s}: [bold]ERROR[/bold] - {res.error[:80]}[/red]")
+                    tools_ran += 1
+                    tools_failed += 1
+            elif res.error and res.passed:
+                # Tool not installed - truly skipped
                 console.print(f"  [yellow]{tool:12s}[/yellow]: [dim]skipped - {res.error[:80]}[/dim]")
                 tools_skipped += 1
             elif not res.passed:
+                # Tool ran but found issues
                 console.print(f"  [red]{tool:12s}[/red]: FAIL ({len(res.findings)} findings)")
                 tools_ran += 1
                 tools_failed += 1
             else:
+                # Tool ran successfully with no critical findings
                 console.print(f"  [green]{tool:12s}[/green]: PASS ({len(res.findings)} findings)")
                 tools_ran += 1
 
@@ -185,11 +198,9 @@ def main(
     if format in ("html", "both"):
         generate_html_report(report, html_output)
 
-    # Determine overall status
+    # Determine overall status - ALL tools must pass (including those that crashed)
     static_results = results.get("static_analysis", {})
-    static_ok = all(
-        r.passed for r in static_results.values() if not r.error
-    ) if static_results else True
+    static_ok = all(r.passed for r in static_results.values()) if static_results else True
 
     coverage_obj = results.get("coverage", DummyCoverage())
     coverage_ok = (

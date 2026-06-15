@@ -1,12 +1,10 @@
 #!/bin/bash
 # foundry-audit-readiness wrapper — FULL MODE (7 tools)
-# Usage: readiness-full [PROJECT_PATH]
-#        readiness-full                    # audit current directory
+# Usage: readiness-full                    # audit current directory
 #        readiness-full /path/to/project   # audit specific directory
+#        readiness-full --target /path/to/project --output my-report
 
 set -e
-
-PROJECT_PATH="${1:-.}"
 
 if ! command -v audit-readiness >/dev/null 2>&1; then
     echo "❌ audit-readiness not found."
@@ -21,6 +19,28 @@ if ! command -v audit-readiness >/dev/null 2>&1; then
     exit 1
 fi
 
+PROJECT_PATH="."
+OUTPUT="audit-report"
+EXTRA_ARGS=()
+
+# Parse common arguments so we can always inject the full tool set.
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --target)
+            PROJECT_PATH="$2"
+            shift 2
+            ;;
+        --output)
+            OUTPUT="$2"
+            shift 2
+            ;;
+        *)
+            EXTRA_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
 if [ ! -d "$PROJECT_PATH" ]; then
     echo "❌ Directory not found: $PROJECT_PATH"
     exit 1
@@ -30,9 +50,13 @@ PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd)"
 
 echo "🔍 Running FULL audit readiness on: $PROJECT_PATH"
 echo "⚠️  This runs 7 tools and may take 10-15 minutes..."
-audit-readiness --target "$PROJECT_PATH" --output audit-report --tools slither,aderyn,solhint,semgrep,mythril,halmos,smtchecker
+audit-readiness \
+    --target "$PROJECT_PATH" \
+    --output "$OUTPUT" \
+    --tools slither,aderyn,solhint,semgrep,mythril,halmos,smtchecker \
+    "${EXTRA_ARGS[@]}"
 
 echo ""
 echo "✅ Reports generated:"
-echo "  - $PROJECT_PATH/audit-report.md"
-echo "  - $PROJECT_PATH/audit-report.html"
+echo "  - $PROJECT_PATH/$OUTPUT.md"
+echo "  - $PROJECT_PATH/$OUTPUT.html"
