@@ -175,18 +175,35 @@ def main(
     # Generate report
     console.rule("[green] Generating Report")
 
+    # Count tools
+    sa_results = results.get("static_analysis", {})
+    tools_ran = sum(1 for r in sa_results.values() if not r.error)
+    tools_configured = len(config.static_analysis.tools)
+    static_analysis_passed = all(r.passed for r in sa_results.values()) if sa_results else True
+    coverage_passed = (
+        results.get("coverage", DummyCoverage()).line_percent >= config.coverage.line
+        and results.get("coverage", DummyCoverage()).branch_percent >= config.coverage.branch
+        and results.get("coverage", DummyCoverage()).function_percent >= config.coverage.function
+    )
+    all_passed = static_analysis_passed and coverage_passed and results.get("natspec", DummyNatSpec()).passed and no_warnings
+
     report = generate_markdown_report(
         project_name=target.name,
         version=__version__,
         date=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
         config=config,
-        static_analysis=results.get("static_analysis", {}),
+        static_analysis=sa_results,
         coverage=results.get("coverage", DummyCoverage()),
         invariants=results.get("invariants", DummyInvariant()),
         natspec=results.get("natspec", DummyNatSpec()),
         gas=results.get("gas", DummyGas()),
         no_warnings=no_warnings,
         compiler_warnings=warning_lines,
+        tools_ran=tools_ran,
+        tools_configured=tools_configured,
+        all_passed=all_passed,
+        static_analysis_passed=static_analysis_passed,
+        coverage_passed=coverage_passed,
     )
 
     md_output = output.with_suffix(".md")
@@ -196,7 +213,25 @@ def main(
         save_report(report, md_output)
 
     if format in ("html", "both"):
-        generate_html_report(report, html_output)
+        html_content = generate_html_report(
+            project_name=target.name,
+            version=__version__,
+            date=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+            config=config,
+            static_analysis=sa_results,
+            coverage=results.get("coverage", DummyCoverage()),
+            invariants=results.get("invariants", DummyInvariant()),
+            natspec=results.get("natspec", DummyNatSpec()),
+            gas=results.get("gas", DummyGas()),
+            no_warnings=no_warnings,
+            compiler_warnings=warning_lines,
+            tools_ran=tools_ran,
+            tools_configured=tools_configured,
+            all_passed=all_passed,
+            static_analysis_passed=static_analysis_passed,
+            coverage_passed=coverage_passed,
+        )
+        save_report(html_content, html_output)
 
     # Determine overall status - ALL tools must pass (including those that crashed)
     static_results = results.get("static_analysis", {})

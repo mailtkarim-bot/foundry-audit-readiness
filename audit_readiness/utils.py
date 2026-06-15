@@ -39,8 +39,14 @@ def run_command(
     if input is not None:
         kwargs["input"] = input
     result = subprocess.run(cmd, **kwargs)
-    if result.returncode != 0 and capture:
-        logger.warning(f"Command failed: {result.stderr[:500]}")
+    # Only log a warning if the command actually produced an error message.
+    # Many tools (slither, solhint) return non-zero exit codes when they find
+    # issues, which is normal behavior - not a crash.
+    if result.returncode != 0 and capture and result.stderr and result.stderr.strip():
+        # Suppress noisy forge lint warnings that appear during halmos/smtchecker runs
+        stderr_clean = result.stderr.strip()
+        if not stderr_clean.startswith("warning["):
+            logger.warning(f"Command failed: {stderr_clean[:500]}")
     return result
 
 
